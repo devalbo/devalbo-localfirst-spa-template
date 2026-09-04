@@ -1,0 +1,55 @@
+/*
+ * Design tokens. Every value a component reaches for lives here, so changing the
+ * look is editing this file rather than hunting literals across the codebase.
+ *
+ * These are the design-system contract, in the same sense the store layout is the
+ * data contract: components consume names, never raw values.
+ */
+
+:root {
+  /* Space — a single scale, so gaps compose predictably */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+
+  /* Type */
+  --font-sans: system-ui, -apple-system, "Segoe UI", roboto, helvetica, arial, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", monospace;
+  --text-sm: 0.8125rem;
+  --text-base: 1rem;
+  --text-lg: 1.25rem;
+  --text-xl: 1.75rem;
+
+  /* Shape */
+  --radius: 0.375rem;
+  --border-width: 1px;
+
+  /* Layout */
+  --measure: 40rem;
+
+  /* Colour — light */
+  --color-bg: #ffffff;
+  --color-surface: #f6f7f9;
+  --color-text: #14171a;
+  --color-text-muted: #5b6570;
+  --color-border: #d9dee3;
+  --color-accent: #1a56c4;
+  --color-danger: #b3261e;
+  --color-danger-bg: #fdeceb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #14171a;
+    --color-surface: #1e2226;
+    --color-text: #e8eaed;
+    --color-text-muted: #9aa4af;
+    --color-border: #333a41;
+    --color-accent: #7aa7ff;
+    --color-danger: #f2b8b5;
+    --color-danger-bg: #3b1f1e;
+  }
+}

@@ -1,0 +1,13 @@
+.shell {
+  max-width: var(--measure);
+  margin: var(--space-6) auto;
+  padding: 0 var(--space-4);
+}
+
+.nav {
+  display: flex;
+  gap: var(--space-4);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-3);
+  border-bottom: var(--border-width) solid var(--color-border);
+}

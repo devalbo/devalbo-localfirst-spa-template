@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+package devalbo.v1;
+
+// Signed wrapper for every message crossing the peer boundary.
+//
+// `payload` is deliberately opaque: sign and verify these exact bytes as
+// transmitted, then decode. Re-serializing before verification eventually fails
+// on semantically identical data, because protobuf output is not canonical.
+// See docs/principles/SERIALIZATION.md.
+message Envelope {
+  bytes payload = 1;
+
+  bytes signature = 2;
+
+  // Ed25519 public key; doubles as the author's stable identity.
+  bytes author_pubkey = 3;
+
+  // Author's signed send time, epoch milliseconds UTC. Authoritative for
+  // last-write-wins only. Freshness uses a locally stamped receivedAt, which is
+  // never carried on the wire — a peer's clock is not trusted for staleness.
+  int64 ts = 4;
+}

@@ -1,0 +1,22 @@
+version: v2
+
+# Generated output is committed and never hand-edited; CI verifies that regenerating
+# produces no diff. See docs/principles/SERIALIZATION.md.
+clean: true
+
+managed:
+  enabled: true
+
+plugins:
+  - local: protoc-gen-ts_proto
+    out: src/gen
+    opt:
+      # Mirror the presence the .proto actually declares — message fields optional,
+      # scalars not. `all` and `none` both produce types that disagree with the wire.
+      - useOptionals=messages
+      # int64 becomes bigint: native, no `long` dependency, no silent precision loss.
+      - forceLong=bigint
+      - esModuleInterop=true
+      # No gRPC here — this is a peer-to-peer message contract, not a service definition.
+      - outputServices=false
+      - outputJsonMethods=false

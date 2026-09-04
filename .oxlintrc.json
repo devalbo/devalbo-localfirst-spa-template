@@ -1,0 +1,46 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": ["dist", "coverage", "src/gen", "src/routeTree.gen.ts", "node_modules"],
+
+  // These three cover most type-aware rules already — floating and misused
+  // promises, the unsafe-`any` family, await-thenable, require-await, eqeqeq.
+  // Don't re-list those here; the categories own them.
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "pedantic": "error"
+  },
+
+  "rules": {
+    // In `restriction` upstream (a stylistic tier), non-negotiable here.
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+
+    // In `nursery` — experimental, may shift between versions. Enabled anyway:
+    // it catches branches that can never execute, which is the rule most tied
+    // to "model the possibility honestly" in DESIGN_AND_DEVELOPMENT.md.
+    "typescript/no-unnecessary-condition": "error",
+
+    // Off with evidence, not by preference. It demands deep readonly on
+    // parameters, which cannot be satisfied for third-party types: TinyBase
+    // `Store`/`Row`, React `FormEvent`/`ErrorInfo`, and `Error` are all mutable
+    // and not ours to change. Every escape is a cast, which the fail-loudly
+    // rule forbids. Revisit if commands ever take a narrowed store interface
+    // instead of TinyBase's `Store`.
+    "typescript/prefer-readonly-parameter-types": "off",
+
+    // Vite's `define` globals are named __LIKE_THIS__ by convention.
+    "no-underscore-dangle": "off"
+  },
+
+  "overrides": [
+    {
+      // Tests deliberately construct malformed input to prove it's rejected.
+      "files": ["tests/**", "**/*.test.ts", "**/*.test.tsx"],
+      "rules": {
+        "typescript/no-explicit-any": "off",
+        "typescript/no-non-null-assertion": "off"
+      }
+    }
+  ]
+}

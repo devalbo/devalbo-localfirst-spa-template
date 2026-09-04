@@ -1,0 +1,53 @@
+{
+  "name": "devalbo-spa-template",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --force",
+    "dev:fast": "vite",
+    "build": "npm run format:check && npm run lint && npm run typecheck && vite build",
+    "build:dev": "vite build",
+    "lint": "oxlint --type-aware",
+    "typecheck": "tsc --noEmit",
+    "format": "oxfmt --ignore-path .gitignore --ignore-path .oxfmtignore",
+    "format:check": "oxfmt --check --ignore-path .gitignore --ignore-path .oxfmtignore",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "preview": "vite preview",
+    "proto:gen": "buf generate",
+    "proto:lint": "buf lint",
+    "proto:format": "buf format -w",
+    "proto:breaking": "buf breaking --against '.git#branch=main'",
+    "proto:check": "npm run proto:lint && npm run proto:gen && git diff --exit-code src/gen"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.32",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tinybase": "^9.7.0",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@tanstack/router-plugin": "^1.168.35",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.7",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.7",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitest/coverage-v8": "^5.0.0",
+    "jsdom": "^29.1.1",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
