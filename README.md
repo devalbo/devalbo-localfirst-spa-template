@@ -15,17 +15,20 @@ That's the whole setup. No backend, no database, no environment configuration.
 
 ## What's in the box
 
-|             |                                                                                         |
-| ----------- | --------------------------------------------------------------------------------------- |
-| **Build**   | Vite 8, TypeScript 7 (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) |
-| **UI**      | React 19, TanStack Router (code-based routes)                                           |
-| **Data**    | Zod schemas as the source of truth, TinyBase reactive store with browser persistence    |
-| **Wire**    | Protobuf via `buf` + `ts-proto`, with breaking-change detection                         |
-| **Quality** | oxlint with type-aware rules (`oxlint-tsgolint`), Vitest, a gated build                 |
+|             |                                                                                              |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| **Build**   | Vite 8, TypeScript 7 (strict, `noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`)      |
+| **UI**      | React 19, TanStack Router (code-based routes)                                                |
+| **Data**    | Zod schemas as the source of truth, TinyBase reactive store with browser persistence         |
+| **Types**   | Branded types: structured prefix+key IDs and branded numbers, with compile-time misuse tests |
+| **Wire**    | Protobuf via `buf` + `ts-proto`, with breaking-change detection                              |
+| **Quality** | oxlint with type-aware rules (`oxlint-tsgolint`), Vitest, a gated build                      |
 
-A worked example runs the full stack end to end — Zod schema → TinyBase store → a command
-returning a structured result → a component that calls the command rather than writing to the
-store. Add a greeting, reload, and it's still there.
+A worked example runs the full stack end to end — branded `GreetingId` → Zod schema → TinyBase
+store → a command returning a structured result → a component that calls the command rather than
+writing to the store. Add a greeting, reload, and it's still there. The id is minted from the
+injected clock/id source, stored as a primitive, and re-branded on read, so the branded-type
+boundary rules are demonstrated by running code rather than described in a doc.
 
 ## Scripts
 
@@ -48,6 +51,7 @@ correctness guarantee is a separate, explicitly-named script. You pay for speed 
 proto/      .proto wire contract (buf module)
 src/
   gen/        generated from proto — committed, never hand-edited
+  ids/        branding primitives: structured IDs and branded numbers
   schemas/    Zod schemas; source of truth for stored shapes
   store/      TinyBase setup; table and value names are a contract
   commands/   operations returning CommandResult
@@ -60,7 +64,7 @@ docs/       the doctrine — start at docs/README.md
 ```
 
 Layer-based, with dependencies pointing **down only**: components → commands → store/schemas →
-utils. A schema can't import a component. See
+ids/utils. A schema can't import a component. See
 [docs/devalbo-principles/architecture/PROJECT_LAYOUT.md](docs/devalbo-principles/architecture/PROJECT_LAYOUT.md).
 
 ## Documentation
@@ -77,6 +81,11 @@ template is for. Start with [docs/README.md](docs/README.md).
 updates. Your project's own decisions and departures go in `docs/decisions/`, which is never
 overwritten.
 
+**That folder is the only thing you inherit.** `src/` is a worked example to learn from and then
+delete, not a library to track — so never bulk-copy it from the template into a project with real
+features. The full path-by-path breakdown, including the one opt-in exception (`src/ids/`), is in
+[INHERITANCE.md](docs/devalbo-principles/operations/INHERITANCE.md).
+
 ## What this deliberately is not
 
 - **Not a server-rendered app.** Browser-only by design.
@@ -87,9 +96,19 @@ overwritten.
 ## Known gaps
 
 Tracked honestly in [SUMMARY.md → Not addressed](docs/devalbo-principles/SUMMARY.md#not-addressed).
-The one to know before building on this: **migrating locally stored data across schema changes
-is unsolved.** The data is on the user's device with no server-side migration to fall back on,
-so a store schema change today risks data loss.
+
+The one to know before building on this: **there is no local data migration mechanism, and
+during discovery that is deliberate.** Break the store layout freely while you're still learning
+what the app is — the only data at risk is your own test rows. What the template does ask for is
+cheap and impossible to retrofit: stamp a `schemaVersion`, refuse to load an unrecognized one,
+tell the user their data is disposable, and keep export working.
+
+**That deferral ends at your first beta.** From then on the store layout is a real contract, and
+the migration mechanism — version stamping, ordered migrations on load, and handling data
+written by a newer build on another device — is a release blocker that has to be designed. The
+policy is in
+[PRINCIPLES_AND_GOALS.md](docs/devalbo-principles/principles/PRINCIPLES_AND_GOALS.md#data-migration-is-a-beta-gated-concern);
+the mechanism is still yours to build.
 
 ## Licence
 

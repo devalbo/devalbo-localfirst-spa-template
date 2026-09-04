@@ -35,6 +35,18 @@
 
   "overrides": [
     {
+      // Applying a brand is a narrowing cast by definition — there is no other way to
+      // produce `string & Brand<"X">` from a validated `string`. The rule is correct
+      // everywhere else, which is why this is scoped to the one directory whose entire
+      // job is minting branded values behind a validating schema. Confining the casts
+      // here is what lets every other layer stay cast-free.
+      // See docs/devalbo-principles/architecture/BRANDED_TYPES.md
+      "files": ["src/ids/**"],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off"
+      }
+    },
+    {
       // Tests deliberately construct malformed input to prove it's rejected.
       "files": ["tests/**", "**/*.test.ts", "**/*.test.tsx"],
       "rules": {

@@ -1,4 +1,10 @@
-import { GreetingSchema, NewGreetingSchema, type Greeting } from "@/schemas/greeting";
+import { assertUuidKey } from "@/ids/keys";
+import {
+  GreetingIdToolbox,
+  GreetingSchema,
+  NewGreetingSchema,
+  type Greeting,
+} from "@/schemas/greeting";
 import { TABLES } from "@/store/store";
 import { fail, ok, type CommandContext, type CommandResult } from "./types";
 
@@ -12,8 +18,9 @@ export function addGreeting(ctx: CommandContext, input: unknown): CommandResult<
     return fail("INVALID_INPUT", parsed.error.issues[0]?.message ?? "Invalid greeting");
   }
 
+  // Randomness stays injected: the key comes from `ctx.newId()`, never from `crypto` here.
   const greeting: Greeting = {
-    id: ctx.newId(),
+    id: GreetingIdToolbox.createIdForKey(assertUuidKey(ctx.newId())),
     name: parsed.data.name,
     createdAt: ctx.now().toISOString(),
   };
@@ -25,6 +32,7 @@ export function addGreeting(ctx: CommandContext, input: unknown): CommandResult<
   return ok(row);
 }
 
+/** The store holds primitives, so the id is re-branded on the way out. */
 export function listGreetings(ctx: CommandContext): CommandResult<readonly Greeting[]> {
   const table = ctx.store.getTable(TABLES.greetings);
   const greetings = Object.entries(table).map(([id, row]) =>
@@ -33,10 +41,19 @@ export function listGreetings(ctx: CommandContext): CommandResult<readonly Greet
   return ok(greetings);
 }
 
-export function removeGreeting(ctx: CommandContext, id: string): CommandResult<null> {
-  if (!ctx.store.hasRow(TABLES.greetings, id)) {
-    return fail("NOT_FOUND", `No greeting with id ${id}`);
+/**
+ * `id` arrives from a component as a plain string, so it is parsed here rather than
+ * trusted. A malformed id and an absent one are different failures and say so.
+ */
+export function removeGreeting(ctx: CommandContext, id: unknown): CommandResult<null> {
+  const parsed = GreetingIdToolbox.parseId(id);
+  if (!parsed.success) {
+    return fail("INVALID_INPUT", `Not a greeting id: ${String(id)}`);
   }
-  ctx.store.delRow(TABLES.greetings, id);
+
+  if (!ctx.store.hasRow(TABLES.greetings, parsed.data)) {
+    return fail("NOT_FOUND", `No greeting with id ${parsed.data}`);
+  }
+  ctx.store.delRow(TABLES.greetings, parsed.data);
   return ok(null);
 }

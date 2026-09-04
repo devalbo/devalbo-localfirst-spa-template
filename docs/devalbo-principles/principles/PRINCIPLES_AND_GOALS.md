@@ -131,6 +131,29 @@ Defaults and fallbacks are for genuinely optional values. Using them to paper ov
 impossible state converts a bug into silently-wrong behavior that surfaces far from its
 cause. See [DESIGN_AND_DEVELOPMENT.md](../architecture/DESIGN_AND_DEVELOPMENT.md) for the full rule.
 
+### 11. Rigor is staged to the lifecycle
+
+**Not every commitment starts on day one. Some switch on at a named milestone.**
+
+A project in discovery is still learning what it is. Its schemas churn, its domain model is
+provisional, and there is no stored data worth protecting because there are no users. Paying
+the full cost of a durability guarantee during that phase buys nothing and slows the learning
+the phase exists for.
+
+The rule is not "be lax early". It is **name the stage, name what it defers, and name the event
+that ends the deferral.** A deferred commitment with no trigger is an omission wearing a better
+word.
+
+| Stage           | Stored data is                         | A schema change is                                    |
+| --------------- | -------------------------------------- | ----------------------------------------------------- |
+| **Discovery**   | Disposable, and the app says so        | Free — move the layout whenever the model should move |
+| **Beta onward** | Real; someone will be upset to lose it | A migration, designed before the change ships         |
+
+This applies to commitments about **durability over time**. It never applies to correctness,
+type safety, testing, or failing loudly — those cost little from day one and get expensive to
+retrofit, which is the opposite trade. The concrete application is
+[data migration](#data-migration-is-a-beta-gated-concern), below.
+
 ---
 
 ## Design Goals
@@ -145,8 +168,8 @@ cause. See [DESIGN_AND_DEVELOPMENT.md](../architecture/DESIGN_AND_DEVELOPMENT.md
 ### For developers
 
 1. **Minimal integration** — clone, install, run.
-2. **Stable contracts** — the store layout (table, index, and value names) is an API; it
-   does not change without a migration.
+2. **Stable contracts** — from beta onward the store layout (table, index, and value names) is
+   an API and does not change without a migration. In discovery it is provisional by design.
 3. **Extensible** — new data types follow the existing schema pattern.
 4. **Future-proof** — adding sync is an extension, not a rewrite.
 5. **Agent-ready** — the command layer is a usable surface for coding agents with no
@@ -164,13 +187,55 @@ cause. See [DESIGN_AND_DEVELOPMENT.md](../architecture/DESIGN_AND_DEVELOPMENT.md
 
 ## What we commit to
 
-| Commitment                         | What it means                                                                                                                   |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| **Local-first always works**       | No future change will require a server for first use.                                                                           |
-| **Export/import always available** | Users can always get their whole state out in a portable form.                                                                  |
-| **Schemas are the contract**       | Zod defines stored and local shapes; Protobuf defines the wire. Types are derived from both, never hand-maintained in parallel. |
-| **Store layout is stable**         | Table names, index names, and value keys won't break without a migration.                                                       |
-| **Sync is additive**               | Adding a sync target does not break local-only use.                                                                             |
+| Commitment                         | What it means                                                                                                                                                  |
+| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Local-first always works**       | No future change will require a server for first use.                                                                                                          |
+| **Export/import always available** | Users can always get their whole state out in a portable form.                                                                                                 |
+| **Schemas are the contract**       | Zod defines stored and local shapes; Protobuf defines the wire. Types are derived from both, never hand-maintained in parallel.                                |
+| **Store layout is stable**         | From beta onward, table names, index names, and value keys won't break without a migration. During discovery the layout is explicitly provisional — see below. |
+| **Sync is additive**               | Adding a sync target does not break local-only use.                                                                                                            |
+
+---
+
+## Data migration is a beta-gated concern
+
+An application of [§11](#11-rigor-is-staged-to-the-lifecycle), and the resolution of what was
+previously this doc set's sharpest open gap.
+
+**Decision: during discovery, migrating locally stored data across schema changes is not a
+development concern. Break the store layout freely and write no migration code.** The first
+beta release is the event that ends the deferral.
+
+**Why this is safe here specifically.** The cost of a missing migration is measured in data
+users would lose. In discovery there are none — the data in the store is the developer's own
+test rows, regenerated in seconds. Writing migrations for a schema that will be replaced twice
+more before anyone else runs the app is effort spent protecting nothing, and it pulls toward a
+worse outcome: a model frozen early because changing it became expensive.
+
+**What is still required during discovery** — this is the part that makes the deferral honest
+rather than a shrug:
+
+1. **Stamp a `schemaVersion`** on the store from the first commit. Cheap now, impossible to
+   backfill later.
+2. **Detect a mismatch and stop.** On an unrecognized version, refuse to load, say plainly what
+   version was found and what the app expects, and offer export-then-reset. Never
+   best-effort-parse an unknown shape — that is the sentinel anti-pattern with data instead of
+   a value, and it corrupts silently.
+3. **Tell the user.** While the app is in discovery, it says so where data is stored. A user who
+   was told their data is disposable and loses it has been treated fairly; one who assumed it
+   was durable has not.
+4. **Keep export working.** Export is the escape hatch that makes the whole trade acceptable,
+   which is why it is a day-one commitment and migration is not.
+
+**At beta, this reverses.** The store layout becomes a real contract, a schema change without a
+migration plan becomes a blocking review issue, and the migration mechanism — stamping stored
+data, running migrations on load, and handling data from a _newer_ build on another device —
+becomes a design task that must be finished before the release it gates. Schedule it as work,
+not as a hope.
+
+**How to know you have passed the line.** Not the version number — the question is whether
+anyone other than the people building it would be upset to lose their data. A private alpha
+with three real users is past it. A demo you reset between showings is not.
 
 ---
 
@@ -181,8 +246,9 @@ Named honestly so nobody is surprised. Each is a real gap, not a decision:
 - **Conflict resolution beyond last-write-wins.** The signed-timestamp LWW rule in
   [PROTOTYPE_BASELINE.md](PROTOTYPE_BASELINE.md) is the whole story today; richer merge
   (CRDTs, MergeableStore) is named but not designed.
-- **Schema evolution and data migration.** The store layout is declared a contract, but the
-  migration mechanism when it changes is unspecified.
+- **The migration mechanism itself**, for projects that have reached beta. The _policy_ is now
+  decided (above); the mechanism — version stamping, ordered migrations on load, and handling
+  data written by a newer build — is still undesigned. Deferred, with a trigger, not ignored.
 - **Authorization.** Identity is modeled; a permission model is not.
 - **Multi-user collaboration and real-time sync.** Peer sync is broadcast-and-apply, not
   collaborative editing.
@@ -211,6 +277,7 @@ reasoning.
 | **Command layer**                 | Operations are composable, structured, testable in isolation.             |
 | **Testability = maintainability** | Hard to test means refactor. Tests enable safe change.                    |
 | **Fail loudly**                   | Impossible states throw; no silent fallbacks.                             |
+| **Staged rigor**                  | Durability commitments switch on at a named milestone, never by drift.    |
 
 ---
 

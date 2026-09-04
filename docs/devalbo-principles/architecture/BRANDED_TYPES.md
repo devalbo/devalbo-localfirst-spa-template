@@ -1,5 +1,31 @@
 # Branded Types
 
+## Where this lives
+
+`src/ids/` is the home for the branding primitives, and it imports nothing from `src/`
+([PROJECT_LAYOUT.md](PROJECT_LAYOUT.md)):
+
+| Module             | Owns                                                                            |
+| ------------------ | ------------------------------------------------------------------------------- |
+| `brand.ts`         | `Branded<T, B>` — the `unique symbol` tag every other brand is built from       |
+| `keys.ts`          | Key methodologies (`UuidKey`, `NumberIndexKey`, `HashKey`) and their validators |
+| `prefixKeyId.ts`   | `PrefixKeyId` and the toolbox factories that mint and parse structured IDs      |
+| `brandedNumber.ts` | `BrandedNumber<B>` and the schema factories for units                           |
+
+Per-domain brands live with their domain, not here: `GreetingId` and its toolbox are declared
+in `src/schemas/greeting.ts`, beside the schema that uses them.
+
+Tests are in `tests/unit/ids/`, and include `@ts-expect-error` cases that fail the typecheck if
+a brand ever stops discriminating — the compiler is the assertion.
+
+**Brand casts are confined to `src/ids/`.** Applying a brand _is_ a narrowing cast; there is no
+other way to produce `string & Brand<"X">` from a validated `string`. Rather than scatter
+justified casts across the codebase, the linter permits `no-unsafe-type-assertion` in this one
+directory — whose entire job is minting branded values behind a validating schema — and nowhere
+else. That is the source-fix rule ([SUMMARY.md](../SUMMARY.md) §3) applied to a constraint that
+cannot be satisfied at the call site: fix it once, at the boundary, so every other layer stays
+cast-free.
+
 ## Position
 
 Use branded types to prevent mixing semantically different values that happen to share the same runtime shape. In this codebase, brands are a practical guardrail against cross-domain mistakes — whether those values are strings (IDs, paths, URIs, temporal strings) or numbers (durations, dimensions, ports, indices) — not a theoretical exercise.
@@ -105,50 +131,63 @@ Numeric types are especially prone to silent unit confusion. Passing millisecond
 **Pattern:**
 
 ```ts
-type Milliseconds = number & { readonly __brand: "Milliseconds" };
-type Seconds = number & { readonly __brand: "Seconds" };
-type Pixels = number & { readonly __brand: "Pixels" };
-type PortNumber = number & { readonly __brand: "PortNumber" };
+type Milliseconds = BrandedNumber<"Milliseconds">;
+type Seconds = BrandedNumber<"Seconds">;
+type Pixels = BrandedNumber<"Pixels">;
+type PortNumber = BrandedNumber<"PortNumber">;
 ```
 
-**Constructors follow the same tiers as string brands:**
+The tag is a `unique symbol` (`Branded<T, B>` in `src/ids/brand.ts`), not a declared
+`__brand` property. A property-based brand is forgeable by anyone who writes the same object
+literal, and it shows up in editor completions on a value that is really just a `number`.
 
-- `unsafeAsMilliseconds(value)`: trusted internal cast
-- `parseMilliseconds(value)`: returns SafeParseReturnType (validates non-negative, finite, etc.)
-- `assertMilliseconds(value)`: throws on invalid
+**Constructors follow the same tiers as string brands**, but the schema is the source of both
+`parse` and `assert` — Zod already provides each tier over one definition, so don't hand-roll
+them:
+
+```ts
+const MillisecondsSchema = createBrandedNonNegativeIntSchema("Milliseconds");
+
+MillisecondsSchema.safeParse(value); // parse tier — graceful
+MillisecondsSchema.parse(value); // assert tier — throws
+unsafeAsBrandedNumber<"Milliseconds">(value); // trusted cast
+```
+
+`brandedNumber.ts` ships the constraint set worth centralizing —
+`createBrandedFiniteSchema`, `createBrandedIntSchema`, `createBrandedNonNegativeIntSchema`,
+`createBrandedPositiveIntSchema`. Each names the brand in its error message, so a rejection
+says which unit was violated rather than "Expected integer". A constraint outside that set
+(a port's `0–65535` range) is a `.refine()` on top, declared with the domain that needs it.
 
 **Conversions between related units should be explicit named functions:**
 
 ```ts
 function millisToSeconds(ms: Milliseconds): Seconds {
-  return unsafeAsSeconds(ms / 1000);
+  return unsafeAsBrandedNumber(ms / 1000);
 }
 
 function secondsToMillis(s: Seconds): Milliseconds {
-  return unsafeAsMilliseconds(s * 1000);
+  return unsafeAsBrandedNumber(s * 1000);
 }
 
-function pxToRem(px: Pixels, baseFontSize: Pixels = unsafeAsPixels(16)): Rem {
-  return unsafeAsRem(px / baseFontSize);
+function pxToRem(px: Pixels, baseFontSize: Pixels = unsafeAsBrandedNumber(16)): Rem {
+  return unsafeAsBrandedNumber(px / baseFontSize);
 }
 ```
+
+`unsafeAsBrandedNumber` infers its brand from the return type, so a conversion function's
+signature is what fixes the unit — which is why these conversions must declare one.
 
 **Validation examples:**
 
 ```ts
-function parsePortNumber(value: number): SafeParseReturnType<PortNumber> {
-  if (!Number.isInteger(value) || value < 0 || value > 65535) {
-    return { success: false, error: /* ... */ };
-  }
-  return { success: true, data: value as PortNumber };
-}
+const MillisecondsSchema = createBrandedNonNegativeIntSchema("Milliseconds");
 
-function parseMilliseconds(value: number): SafeParseReturnType<Milliseconds> {
-  if (!Number.isFinite(value) || value < 0) {
-    return { success: false, error: /* ... */ };
-  }
-  return { success: true, data: value as Milliseconds };
-}
+// A domain constraint the factory set doesn't cover is refined on top of it.
+const PortNumberSchema = createBrandedNonNegativeIntSchema("PortNumber").refine(
+  (port) => port <= 65535,
+  "PortNumber must not exceed 65535",
+);
 ```
 
 **Compile-time misuse prevention:**
@@ -173,11 +212,11 @@ Standard arithmetic operators strip brands (`Milliseconds + Milliseconds` return
 
 ```ts
 function addMilliseconds(a: Milliseconds, b: Milliseconds): Milliseconds {
-  return unsafeAsMilliseconds(a + b);
+  return unsafeAsBrandedNumber(a + b);
 }
 
 function scaleMilliseconds(ms: Milliseconds, factor: number): Milliseconds {
-  return unsafeAsMilliseconds(ms * factor);
+  return unsafeAsBrandedNumber(ms * factor);
 }
 ```
 
@@ -201,10 +240,13 @@ In this codebase, a **structured ID** is a branded identifier that embeds its do
 
 **Key methodologies:**
 
-1. **UuidKey** - Full UUID (RFC 4122) as the key portion
-   - Format: `prefix_xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-   - Use when: Globally unique IDs needed, random generation, distributed systems
+1. **UuidKey** - Full UUID as the key portion
+   - Format: `prefix_xxxxxxxx-xxxx-4xxx-[89ab]xxx-xxxxxxxxxxxx`
+   - Use when: Globally unique IDs needed, distributed systems, no coordination point
    - Example: `game_550e8400-e29b-41d4-a716-446655440000`
+   - **v4 specifically**, not RFC 4122 generally: the pattern pins the version and variant
+     nibbles. `crypto.randomUUID()` is the only source in scope, so anything else reaching
+     this validator is a bug worth failing on rather than a UUID flavor worth supporting.
 
 2. **NumberIndexKey** - Sequential or explicit numeric index
    - Format: `prefixN` or `prefix_N` (separator is a design decision)
@@ -258,12 +300,22 @@ Rule of thumb:
 - external/user/file/network input where errors are expected: `parseX`
 - external/user/file/network input where errors are exceptional: `assertX`
 
-For ID brands, expose a small toolbox API per ID family:
+For ID brands, a toolbox from `prefixKeyId.ts` gives you the family's whole surface:
 
-- `createRandomId()`: generate a valid branded ID
-- `createIdForKey(key)`: deterministically build branded ID from UUID/int key
-- `parseId(id)`: validate and return SafeParseReturnType
-- `assertId(id)`: validate and return branded ID (throws on invalid)
+- `createIdForKey(key)`: build the branded ID from a validated key — **the only way to mint one**
+- `keyOf(id)`: recover the key from an ID; total, because a valid ID always has one
+- `parseId(id)`: validate, returning a `ZodSafeParseResult`
+- `assertId(id)`: validate, throwing on invalid
+
+**There is deliberately no `createRandomId`.** A toolbox that generates its own UUID reaches
+for `crypto.randomUUID()` inside code that should be deterministic, which breaks the injected-
+randomness rule in [COMMAND_LAYER.md](COMMAND_LAYER.md) and makes any command that mints an ID
+untestable against an exact value. The key comes from the caller instead — in a command, from
+`ctx.newId()`:
+
+```ts
+const id = GreetingIdToolbox.createIdForKey(assertUuidKey(ctx.newId()));
+```
 
 ## Boundary Rules
 
@@ -294,17 +346,19 @@ Brands are for correctness at typed boundaries, not for changing on-disk/in-memo
 
 Use this rollout method for each new branded domain:
 
-1. Define the brand type and canonical schema in `@devalbo-cli/shared`.
+1. Declare the brand type and its schema **beside the domain that owns it** (as
+   `src/schemas/greeting.ts` does for `GreetingId`), building on the primitives in `src/ids/`.
+   Only genuinely cross-domain brands belong in `src/ids/` itself.
 2. Add constructor surfaces by trust level:
 
 - `unsafeAsX` for trusted internal invariants only
-- `parseX` / `assertX` for untrusted input
+- `parseX` / `assertX` for untrusted input — usually just the schema's `safeParse` / `parse`
 
-3. If the domain is an ID, define:
+3. If the domain is an ID, call the right factory rather than hand-rolling one:
 
-- prefix constant(s)
-- key methodology (`UuidKey`, `NumberIndexKey`, or `HashKey`)
-- toolbox (`createRandomId`, `createIdForKey`, `parseId`, `assertId`)
+- `createUuidIdToolbox(prefix)` — random, distributed, underscore-separated by default
+- `createNumberIndexIdToolbox(prefix)` — dense and human-readable, unseparated by default
+- `createHashIdToolbox(prefix, { hashLength })` — content-addressed or deterministic
 
 4. Apply at boundaries first (CLI/API/UI parsing), then thread through internal accessors/services.
 5. Keep storage primitive (`string`) and re-brand at typed boundaries on read/write paths.
@@ -317,10 +371,13 @@ Use this rollout method for each new branded domain:
 ```ts
 type GameId = PrefixKeyId<"game", UuidKey>;
 
-const GameIdToolbox = createBrandedUuidIdToolbox("game");
+const GameIdToolbox = createUuidIdToolbox("game");
 
-const id1: GameId = GameIdToolbox.createRandomId(); // produces "game_550e8400-e29b-41d4-a716-446655440000" (underscore separator by design)
-const id2: GameId = GameIdToolbox.createIdForKey("550e8400-e29b-41d4-a716-446655440000" as UuidKey);
+// The key comes from the caller's injected id source, never from inside the toolbox.
+const id1: GameId = GameIdToolbox.createIdForKey(assertUuidKey(ctx.newId()));
+// produces "game_550e8400-e29b-41d4-a716-446655440000" (underscore separator by design)
+
+const key: UuidKey = GameIdToolbox.keyOf(id1); // and back out again
 
 // Use parseId when you need to handle errors
 const parseResult = GameIdToolbox.parseId("game_550e8400-e29b-41d4-a716-446655440000");
@@ -337,9 +394,9 @@ const id4: GameId = GameIdToolbox.assertId("game_550e8400-e29b-41d4-a716-4466554
 ```ts
 type SeatId = PrefixKeyId<"seat", NumberIndexKey>;
 
-const SeatIdToolbox = createBrandedNumberIndexIdToolbox("seat");
+const SeatIdToolbox = createNumberIndexIdToolbox("seat");
 
-const seatA: SeatId = SeatIdToolbox.createIdForKey("42" as NumberIndexKey); // produces "seat42" (no separator by design)
+const seatA: SeatId = SeatIdToolbox.createIdForKey(numberIndexKeyOf(42)); // produces "seat42" (no separator by design)
 
 // Use parseId for error handling
 const parseResult = SeatIdToolbox.parseId("seat42");
@@ -356,10 +413,10 @@ const seatC: SeatId = SeatIdToolbox.assertId("seat42");
 ```ts
 type ContactId = PrefixKeyId<"contact", HashKey>;
 
-const ContactIdToolbox = createBrandedHashIdToolbox("contact", { hashLength: 8 });
+const ContactIdToolbox = createHashIdToolbox("contact", { hashLength: 8 });
 
 // Generate from source data (deterministic)
-const contactA: ContactId = ContactIdToolbox.createIdForKey("8a7b2c1d" as HashKey); // produces "contact_8a7b2c1d"
+const contactA: ContactId = ContactIdToolbox.createIdForKey(assertHashKey(digest, 8)); // produces "contact_8a7b2c1d"
 
 // Parse with validation
 const parseResult = ContactIdToolbox.parseId("contact_8a7b2c1d");
@@ -373,29 +430,39 @@ const contactC: ContactId = ContactIdToolbox.assertId("contact_8a7b2c1d");
 
 ### Boundary Parsing Pattern
 
-**Alternative 1: Use parseX for graceful error handling**
+There is no server here, so the untrusted boundary is the **command signature** — a component
+hands over whatever it read out of the DOM or a route param.
+
+**Alternative 1: `parseId` when the caller should see a failure**
+
+A command returns it as a result, because bad input is expected and recoverable:
 
 ```ts
-// Untrusted API input - handle errors gracefully
-const parseResult = ContactIdSchema.safeParse(req.params.contactId);
-if (!parseResult.success) {
-  return { error: parseResult.error };
+export function removeGreeting(ctx: CommandContext, id: unknown): CommandResult<null> {
+  const parsed = GreetingIdToolbox.parseId(id);
+  if (!parsed.success) {
+    return fail("INVALID_INPUT", `Not a greeting id: ${String(id)}`);
+  }
+  // ...trusted from here down
 }
-const contactId = parseResult.data;
-
-// Trusted internal path after validation
-setDefaultPersona(store, contactId, unsafeAsPersonaId(personaIdFromInvariant));
 ```
 
-**Alternative 2: Use assertX when invalid input should abort**
+Note the parameter is `unknown`, not `string`. Typing it `GreetingId` would be a lie the
+caller has to cast its way past, which just relocates the problem to the call site — the
+opposite of fixing it at the source.
+
+**Alternative 2: `assertId` / `assertX` when invalid input is a programming error**
+
+`addGreeting` asserts on the injected id source rather than checking it, because a
+`ctx.newId()` that isn't a UUID is a broken adapter, not bad user input — the fail-loudly rule
+in [DESIGN_AND_DEVELOPMENT.md](DESIGN_AND_DEVELOPMENT.md):
 
 ```ts
-// Untrusted API input - throws on invalid
-const contactId = assertContactId(req.params.contactId);
-
-// Trusted internal path after validation
-setDefaultPersona(store, contactId, unsafeAsPersonaId(personaIdFromInvariant));
+const id = GreetingIdToolbox.createIdForKey(assertUuidKey(ctx.newId()));
 ```
+
+The two alternatives are not a style choice: **whether failure is expected decides which one**,
+and getting it backwards either crashes on ordinary input or swallows a real defect.
 
 ### Compile-Time Misuse Prevention
 
@@ -408,12 +475,43 @@ setDefaultContact(store, contactId); // ok
 setDefaultContact(store, groupId);
 ```
 
+### The worked example, end to end
+
+`GreetingId` is the template's one live ID family, and it exercises every rule above. Follow it
+when adding a second:
+
+| Step               | Where                     | What happens                                                                                |
+| ------------------ | ------------------------- | ------------------------------------------------------------------------------------------- |
+| Declare            | `src/schemas/greeting.ts` | `GreetingId` + `GreetingIdToolbox`, beside the schema; `GreetingSchema.id` is the toolbox's |
+| Mint               | `addGreeting`             | Key from `ctx.newId()`, asserted, composed by `createIdForKey`                              |
+| Store              | TinyBase                  | A plain `string` in the row — the brand does not survive the write                          |
+| Read back          | `listGreetings`           | Rows re-enter through `GreetingSchema`, which re-applies the brand                          |
+| Accept from the UI | `removeGreeting`          | `unknown` in, `parseId` at the top, `INVALID_INPUT` on failure                              |
+
+The read-back step is the one that gets skipped. Storage is primitive by design, so **every
+path out of the store is a boundary** — a row spread into a typed object without reparsing is a
+brand asserted rather than proven, and it will be wrong the first time an older or hand-edited
+row shows up.
+
 ## Testing Expectations
 
-- compile-time misuse tests (`@ts-expect-error`) for swapped domains
-- schema inference tests to confirm branded outputs
-- runtime tests for parse/assert behavior
-- roundtrip checks through persistence boundaries
+Four kinds, all present in `tests/unit/ids/` and `tests/unit/schemas/greeting.test.ts`:
+
+- **Compile-time misuse** — `@ts-expect-error` on a swapped domain and on a plain unbranded
+  value. These assert at typecheck, not at runtime: if a brand stops discriminating, the
+  unused directive fails `npm run typecheck`. A `@ts-expect-error` that stops erroring is
+  itself an error, which is what makes the test self-policing.
+- **Prefix isolation** — one family must reject another's ID carrying the same key, including
+  a bare key with no prefix at all.
+- **Key-shape rejection** — the cases the regex exists for: a non-v4 UUID, a leading-zero
+  index, a short hash, trailing content after a valid key. Assert a rejection per rule, since
+  a single "rejects garbage" test passes for the wrong reason.
+- **Round-trip** — `keyOf(createIdForKey(k)) === k`, and a full store write/read that proves
+  the value survives as a primitive and re-brands on the way back.
+
+Test the toolbox factory once, not once per family. A new family that uses
+`createUuidIdToolbox` needs only its own boundary tests — the composition rules are already
+covered.
 
 ## Future Avenue: Branded Metric Values
 
@@ -441,7 +539,11 @@ const n: number = Pounds.extractNumber(weight); // 1.5
 
 **Scope:** This covers ~160 units across 16 measurement domains — length, mass, volume, area, temperature, time, speed, pressure, force, energy, power, electrical, frequency, torque, flow rate, density, luminosity, angle, and data/information — in both metric (SI) and US customary systems.
 
-**Relationship to core branded types:** Metric values reuse the same `createBrandedPrefixKeyStringToolboxWithSeparator` base factory from `@devalbo-cli/branded-types`, introducing a `NumericValueKey` methodology where the key portion is a decimal number rather than a UUID or index. The core branding package should be implemented first; the units package is a follow-on that builds on top of it.
+**Relationship to core branded types:** metric values would reuse `createPrefixKeyIdToolbox`
+from `src/ids/prefixKeyId.ts` directly, adding a `NumericValueKey` methodology whose key
+portion is a decimal number rather than a UUID, index, or hash. That is the whole extension —
+a new `KeyMethodology` and its constructors. Nothing in the existing primitives needs to change,
+which is the argument that the factory boundary was drawn in the right place.
 
 **Design considerations:**
 
@@ -450,7 +552,9 @@ const n: number = Pounds.extractNumber(weight); // 1.5
 - **SI prefix stacking** — Rather than enumerating every combination (milliwatt, kilowatt, megawatt...), a systematic approach could define base units + SI prefix multipliers.
 - **String vs number at rest** — String encoding (`"lbs_1.5"`) is best for boundary/storage/transmission where self-description matters. For computation-heavy paths, use branded numbers internally and convert at boundaries.
 
-See `UNITS_BRAND_IMPL.md` for the full implementation plan as a separate `@devalbo-cli/branded-units` package.
+**Status: an avenue, not a plan.** Nothing here is implemented, and a template has no business
+shipping 160 units. Take it as the argument that `src/ids/` generalizes — build it in the
+project that turns out to need it, and record the decision there.
 
 ## Non-Goals
 

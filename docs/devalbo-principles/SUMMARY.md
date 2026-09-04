@@ -82,6 +82,10 @@ backend, no accounts, no server required for core features.
   (`ContactId` vs `GroupId`, `Milliseconds` vs `Seconds`), cross boundaries, or are
   security-sensitive. Brands are compile-time only; store primitives, re-brand on read.
   → `BRANDED_TYPES.md`
+- **A domain ID is a structured `prefix_key` string**, built by a toolbox factory, declared
+  beside the schema that owns it. The toolbox never mints randomness — `createIdForKey` takes
+  a key the caller supplies from the injected `ctx.newId()`, which is what keeps an
+  ID-minting command deterministic under test. → `BRANDED_TYPES.md`, `COMMAND_LAYER.md`
 - Don't brand low-risk freeform text or generic counters.
 
 ### Structuring code, modules & boundaries
@@ -110,8 +114,10 @@ error? }`; keep command logic environment-agnostic; inject the clock and randomn
   render. Persist to a reactive store with a real persister. → `PRINCIPLES_AND_GOALS.md`
 - **Sync is additive** — adding a peer or a remote target must not break local-only use.
   Always offer portable **whole-user export/import**. → `PROTOTYPE_BASELINE.md`
-- **Storage layout is a contract** (table/index/value names). Don't break it without a
-  migration — and note that the migration mechanism is still an open gap.
+- **Storage layout is a contract _from beta onward_** (table/index/value names). In discovery
+  it is provisional: break it freely, write no migration code, but stamp a `schemaVersion`,
+  refuse to load an unrecognized one, and say in the app that data is disposable.
+  → `PRINCIPLES_AND_GOALS.md` → Data migration is a beta-gated concern
 - **Identity is a keypair.** Sign every outbound message, verify every inbound one. Two
   clocks: signed `ts` for conflict resolution, local `receivedAt` for staleness — never cross
   them. → `PROTOTYPE_BASELINE.md`
@@ -171,23 +177,25 @@ error? }`; keep command logic environment-agnostic; inject the clock and randomn
 
 ## When in doubt
 
-| Situation                                           | Default move                                                               |
-| --------------------------------------------------- | -------------------------------------------------------------------------- |
-| Type error at a call site                           | Fix the type at its definition; minimal commented cast only as last resort |
-| Reaching for `any`                                  | Use `unknown` + narrow, or define an interface                             |
-| Two similar values easy to confuse                  | Brand them (if the risk is real and they cross boundaries)                 |
-| Untrusted input arrives                             | Parse/assert at the boundary; trust it afterward                           |
-| A value "can't" be missing but the type says it can | Throw; don't `!` it or default it away                                     |
-| Writing a comment to explain what code does         | Rename or restructure until the comment is unnecessary                     |
-| Adding a new operation                              | Model it as a command returning a structured result                        |
-| A change breaks a test                              | Decide: wrong code or wrong expectation? Don't silently edit the test      |
-| Hard to write a test                                | Refactor the code, don't grow the test                                     |
-| "Is it done?"                                       | Not until manually verified against the acceptance criteria                |
-| Adding a quality check to the build                 | Fold it into the default script; add a `:dev` fast path                    |
-| Choosing a library                                  | Portable, first-party-TypeScript, actively maintained — and ask first      |
-| A dependency conflict                               | Resolve forward (upgrade), never by downgrading                            |
-| Found dead code / stale config / an unused dep      | Remove it now                                                              |
-| Made a real decision                                | Write it down, including what you rejected and why                         |
+| Situation                                           | Default move                                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Type error at a call site                           | Fix the type at its definition; minimal commented cast only as last resort                  |
+| Reaching for `any`                                  | Use `unknown` + narrow, or define an interface                                              |
+| Two similar values easy to confuse                  | Brand them (if the risk is real and they cross boundaries)                                  |
+| Untrusted input arrives                             | Parse/assert at the boundary; trust it afterward                                            |
+| A value "can't" be missing but the type says it can | Throw; don't `!` it or default it away                                                      |
+| Writing a comment to explain what code does         | Rename or restructure until the comment is unnecessary                                      |
+| Adding a new operation                              | Model it as a command returning a structured result                                         |
+| A change breaks a test                              | Decide: wrong code or wrong expectation? Don't silently edit the test                       |
+| Hard to write a test                                | Refactor the code, don't grow the test                                                      |
+| "Is it done?"                                       | Not until manually verified against the acceptance criteria                                 |
+| Adding a quality check to the build                 | Fold it into the default script; add a `:dev` fast path                                     |
+| Choosing a library                                  | Portable, first-party-TypeScript, actively maintained — and ask first                       |
+| A dependency conflict                               | Resolve forward (upgrade), never by downgrading                                             |
+| Found dead code / stale config / an unused dep      | Remove it now                                                                               |
+| Your first real feature just landed                 | Delete the greeting worked example — schema, command, components, route, store table, tests |
+| Tempted to copy something from the template repo    | Only `docs/devalbo-principles/` is safe to sweep; everything else is cherry-picked          |
+| Made a real decision                                | Write it down, including what you rejected and why                                          |
 
 ---
 
@@ -196,23 +204,26 @@ error? }`; keep command logic environment-agnostic; inject the clock and randomn
 Conflicts that were genuinely open at some point and are now resolved. Recorded so the
 divergence is deliberate rather than re-litigated.
 
-| Topic                  | Decision                                                                                                                                                                           |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Casts**              | **Source-fix first.** A cast is allowed only when genuinely unavoidable, and must be minimal and commented.                                                                        |
-| **Type-check gating**  | **Gate the default `build`** (format-check → lint → typecheck → build), or enforce equivalently in CI.                                                                             |
-| **Verification**       | **Both, layered.** Automated tests are required but necessary-not-sufficient; manual verification gates releases.                                                                  |
-| **BDD tooling**        | **`playwright-bdd`** if and when E2E is added — one tool unifying browser E2E and Gherkin, not two.                                                                                |
-| **Test artifacts**     | Ephemeral, gitignored output is fine locally; persist and publish artifacts in CI or audit contexts.                                                                               |
-| **Terminal CLI**       | **Dropped.** Browser-only, but the **command layer is kept** — its value was testability and composability, not the terminal.                                                      |
-| **Pinning vs. latest** | **Both.** Choose the latest stable version; pin exactly what you build with. Pinning is for reproducibility, not for staying behind.                                               |
-| **Node version**       | **Active LTS line**, not Current, not maintenance. Derive `.nvmrc` from a verified interpreter rather than copying a number from a doc.                                            |
-| **Serialization**      | **Protobuf on the wire, JSON+Zod in the store, JSON for export.** Proto owns structure and evolution; Zod owns semantics. Not a compromise — two different jobs.                   |
-| **Canonicalization**   | **Sidestepped, not solved.** Sign and verify opaque payload bytes; never re-serialize before verifying.                                                                            |
-| **Protobuf codegen**   | **`ts-proto`** for readable output at this schema size, driven by **`buf`** (lint + breaking detection). `protobuf-es` is the documented alternative if message count grows large. |
-| **Linter**             | **oxlint + oxlint-tsgolint**, not typescript-eslint — the latter has no TypeScript 7 support, and pinning the compiler a major behind to keep a linter is the wrong trade.         |
-| **Formatter**          | **oxfmt**, the first step of the gated build. One toolchain family; formatting is never a review topic.                                                                            |
-| **Routing**            | **TanStack Router, file-based** — the framework's documented default, with `autoCodeSplitting`. The generated route tree is committed so a fresh clone typechecks.                 |
-| **Styling**            | **CSS Modules + CSS custom-property tokens**, no dependency. Revisit StyleX at 1.0 with first-party Vite support (`docs/decisions/0001`).                                          |
+| Topic                    | Decision                                                                                                                                                                                                                         |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Casts**                | **Source-fix first.** A cast is allowed only when genuinely unavoidable, and must be minimal and commented. Brand application is the one systematic exception, confined to `src/ids/` where the linter allows it.                |
+| **Data migration**       | **Deferred during discovery, blocking at beta.** Break the store layout freely while learning; stamp a `schemaVersion`, refuse unknown versions, keep export working. → `PRINCIPLES_AND_GOALS.md`                                |
+| **Template inheritance** | **Only `docs/devalbo-principles/` is inherited.** `src/` is a worked example you delete, not a library you track — `src/ids/` is the one opt-in exception. Never bulk-copy `src/`. → `INHERITANCE.md`                            |
+| **Branded types**        | **Implemented in `src/ids/`, not a dependency.** Structured prefix+key IDs and branded numbers ship as template source with tests, so the doctrine's prescribed API is real code rather than a reference to an external package. |
+| **Type-check gating**    | **Gate the default `build`** (format-check → lint → typecheck → build), or enforce equivalently in CI.                                                                                                                           |
+| **Verification**         | **Both, layered.** Automated tests are required but necessary-not-sufficient; manual verification gates releases.                                                                                                                |
+| **BDD tooling**          | **`playwright-bdd`** if and when E2E is added — one tool unifying browser E2E and Gherkin, not two.                                                                                                                              |
+| **Test artifacts**       | Ephemeral, gitignored output is fine locally; persist and publish artifacts in CI or audit contexts.                                                                                                                             |
+| **Terminal CLI**         | **Dropped.** Browser-only, but the **command layer is kept** — its value was testability and composability, not the terminal.                                                                                                    |
+| **Pinning vs. latest**   | **Both.** Choose the latest stable version; pin exactly what you build with. Pinning is for reproducibility, not for staying behind.                                                                                             |
+| **Node version**         | **Active LTS line**, not Current, not maintenance. Derive `.nvmrc` from a verified interpreter rather than copying a number from a doc.                                                                                          |
+| **Serialization**        | **Protobuf on the wire, JSON+Zod in the store, JSON for export.** Proto owns structure and evolution; Zod owns semantics. Not a compromise — two different jobs.                                                                 |
+| **Canonicalization**     | **Sidestepped, not solved.** Sign and verify opaque payload bytes; never re-serialize before verifying.                                                                                                                          |
+| **Protobuf codegen**     | **`ts-proto`** for readable output at this schema size, driven by **`buf`** (lint + breaking detection). `protobuf-es` is the documented alternative if message count grows large.                                               |
+| **Linter**               | **oxlint + oxlint-tsgolint**, not typescript-eslint — the latter has no TypeScript 7 support, and pinning the compiler a major behind to keep a linter is the wrong trade.                                                       |
+| **Formatter**            | **oxfmt**, the first step of the gated build. One toolchain family; formatting is never a review topic.                                                                                                                          |
+| **Routing**              | **TanStack Router, file-based** — the framework's documented default, with `autoCodeSplitting`. The generated route tree is committed so a fresh clone typechecks.                                                               |
+| **Styling**              | **CSS Modules + CSS custom-property tokens**, no dependency. Revisit StyleX at 1.0 with first-party Vite support (`docs/decisions/0001`).                                                                                        |
 
 ---
 
@@ -223,12 +234,13 @@ decided, write it in the doc that owns it and strike it here.
 
 ### Will cost you data or trust
 
-1. **Local data migration.** The wire has an evolution discipline (proto field numbers +
-   `buf breaking`) and exports carry a format version, but nothing specifies what happens when
-   a user's _stored_ data predates the current schema — or postdates it, from a newer build on
-   another device. **The sharpest gap in the project:** the data is on the user's device with
-   no server-side migration to fall back on, so shipping a store schema change without this is
-   shipping irreversible data loss.
+1. **The local migration _mechanism_ — for projects that reach beta.** The _policy_ is now
+   settled: migration is deliberately not a development concern during discovery, and becomes
+   blocking at the first beta
+   ([PRINCIPLES_AND_GOALS.md → Data migration is a beta-gated concern](principles/PRINCIPLES_AND_GOALS.md#data-migration-is-a-beta-gated-concern)).
+   What remains undesigned is the machinery that policy will need — stamping stored data,
+   running ordered migrations on load, and handling data written by a _newer_ build on another
+   device. Costs nothing in discovery; a release blocker the moment real users exist.
 2. **Cryptography & key management.** Algorithms are chosen (Ed25519 via WebCrypto); rotation,
    revocation, recovery, and loss are not. Keys are generated extractable so they can be backed
    up — a deliberate trade-off whose exposure has never been reasoned about.
@@ -285,6 +297,7 @@ heading is a label, not a gap.
 | `TESTING.md`                  | Testing **philosophy**: tests as a design tool, behavior over implementation                                                    |
 | `TEST_PLAN.md`                | Testing **requirements**: the mandate, what to test per layer, coverage, process rules                                          |
 | `testing/unit-tests.md`       | Vitest commands, layout, helper conventions                                                                                     |
+| `INHERITANCE.md`              | What tracks the template vs. what's yours; never bulk-copy `src/`; deleting the worked example                                  |
 | `SETUP_NEW.md`                | Standing up a new project: dependencies, strict config, gated scripts, cold verification                                        |
 | `MAINTENANCE.md`              | Dependency selection, update cadence, audit triage, pin-vs-latest, removal                                                      |
 | `VERSIONING.md`               | SemVer + git/branch/UTC build info injected at build, surfaced in the app                                                       |

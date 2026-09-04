@@ -353,6 +353,14 @@ a format version gives _exports_ a compatibility gate. Neither answers what happ
 user opens the app and their locally stored data predates the current schema — or postdates
 it, because they ran a newer build on another device.
 
-That path — stamping a version on stored data, running migrations on load, and handling data
-from the future — remains unspecified. See
-[SUMMARY.md](../SUMMARY.md) → Not addressed.
+**The policy is now decided; the mechanism is not.** Migration is deliberately deferred during
+discovery and becomes a release blocker at the first beta →
+[PRINCIPLES_AND_GOALS.md → Data migration is a beta-gated concern](../principles/PRINCIPLES_AND_GOALS.md#data-migration-is-a-beta-gated-concern).
+What that policy will eventually need and does not yet have is the machinery: stamping a version
+on stored data, running ordered migrations on load, and handling data from the future.
+
+One requirement lands from day one and belongs here: **stored data carries a `schemaVersion`,
+and an unrecognized one is refused rather than best-effort parsed.** That is the rule this doc
+already applies to the export blob's `formatVersion` — read the version first, refuse what you
+can't handle, never guess at an unknown shape. Storage and export differ in _when migration
+arrives_, not in whether an unknown version may be interpreted.

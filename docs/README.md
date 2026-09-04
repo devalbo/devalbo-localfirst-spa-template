@@ -2,6 +2,11 @@
 
 Two kinds of documentation live here, and the split is the point.
 
+> **Looking for what tracks the template across the whole repo — `src/`, config, the worked
+> example?** That's
+> [devalbo-principles/operations/INHERITANCE.md](devalbo-principles/operations/INHERITANCE.md).
+> This file covers `docs/` only.
+
 | Folder                                         | What it is                                                                | Who edits it                                         |
 | ---------------------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- |
 | **[devalbo-principles/](devalbo-principles/)** | Inherited engineering doctrine — the shared devalbo principles            | **The template only.** Replaced wholesale on update. |

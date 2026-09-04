@@ -12,6 +12,7 @@ code works belongs in the code.
 | Deciding something not covered elsewhere | [SUMMARY.md](SUMMARY.md) — the decision guide, with a "when in doubt" table                                                            |
 | An AI coding agent                       | [AGENT_CONDUCT.md](AGENT_CONDUCT.md) — read this first, before touching anything                                                       |
 | Setting up a new project                 | [operations/SETUP_NEW.md](operations/SETUP_NEW.md)                                                                                     |
+| Wondering what tracks the template       | [operations/INHERITANCE.md](operations/INHERITANCE.md) — what you inherit, what's yours                                                |
 | About to write code                      | [architecture/PROJECT_LAYOUT.md](architecture/PROJECT_LAYOUT.md) then [practices/CODING_GUIDELINES.md](practices/CODING_GUIDELINES.md) |
 | Looking for what's unsolved              | [SUMMARY.md](SUMMARY.md) → Not addressed                                                                                               |
 
@@ -65,6 +66,7 @@ doc that owns it. If you read one file, read that one.
 
 | Doc                                         | Covers                                                                     |
 | ------------------------------------------- | -------------------------------------------------------------------------- |
+| [INHERITANCE.md](operations/INHERITANCE.md) | What tracks the template and what is yours; deleting the worked example    |
 | [SETUP_NEW.md](operations/SETUP_NEW.md)     | Dependencies, strict config, gated scripts, cold verification              |
 | [MAINTENANCE.md](operations/MAINTENANCE.md) | Dependency selection, update cadence, audit triage, pin-vs-latest          |
 | [VERSIONING.md](operations/VERSIONING.md)   | SemVer plus git and UTC build info, injected at build and shown in the app |
